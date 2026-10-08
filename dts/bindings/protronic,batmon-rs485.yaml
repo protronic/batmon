@@ -1,0 +1,17 @@
+# batmon RS485 BMS port: the UART wired to an RS485 transceiver plus the optional
+# driver-enable line (DE and /RE tied together). Leave de-gpios out for
+# transceiver modules with automatic direction control.
+
+description: batmon RS485 BMS port
+
+compatible: "protronic,batmon-rs485"
+
+properties:
+  uart:
+    type: phandle
+    required: true
+    description: UART controller connected to the RS485 transceiver
+
+  de-gpios:
+    type: phandle-array
+    description: Driver enable output, active while batmon transmits

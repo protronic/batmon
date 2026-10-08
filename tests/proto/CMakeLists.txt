@@ -9,5 +9,8 @@ target_sources(app PRIVATE
   src/main.c
   ${BATMON_ROOT}/src/proto/bm_proto.c
   ${BATMON_ROOT}/src/proto/bm_json.c
+  ${BATMON_ROOT}/src/proto/bm_ydt.c
+  ${BATMON_ROOT}/src/proto/bm_serial.c
   ${BATMON_ROOT}/tests/common/test_cases.c
+  ${BATMON_ROOT}/tests/common/test_serial.c
 )

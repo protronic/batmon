@@ -153,3 +153,80 @@ Die Hints (`proto.hints` im JSON, Bitmaske) halten die Einzelbeobachtungen fest:
 | 11 | `359_SHORT` | 0x359 kürzer als 7 Byte |
 
 Link-Status: `link_up` fällt auf `false`, wenn 5 s lang kein Batterierahmen kommt.
+
+## 8. RS485-Protokolle
+
+Die serielle Seite wird aktiv abgefragt (batmon ist Master) oder im
+Listen-only-Modus mitgehört. Dekoder und Zustandsautomat liegen in
+`src/proto/bm_serial.c`, die Rahmenhelfer in `src/proto/bm_ydt.c`.
+
+### 8.1 YD/T-1363-ASCII-Rahmen (Pylontech, PACE, Seplos V2)
+
+```
+~ VER ADR CID1 CID2 LENGTH INFO CHKSUM \r
+```
+
+* alle Felder als Hex-Zeichen; VER 20 (Pylontech, Seplos, ältere PACE) oder
+  25 (PACE); ADR = Pack-Adresse (Pylontech 2 für das erste Modul, PACE 1,
+  Seplos 0); CID1 46 = Batterie; CID2 = Kommando, in der Antwort der
+  Rückgabecode (00 ok, 01 Versionsfehler, 02 Prüfsumme, 04 Kommando unbekannt,
+  90 Adressfehler ...)
+* LENGTH = LCHKSUM (4 Bit: Zweierkomplement der Nibble-Summe von LENID) +
+  LENID (12 Bit: Anzahl INFO-Zeichen)
+* CHKSUM = Zweierkomplement der Summe aller Zeichen von VER bis INFO
+
+Beispiele: `~20024642E00202FD33` (Pylontech, Analogwerte Pack 2),
+`~25014642E00201FD30` (PACE), `~20004642E00200FD37` (Seplos),
+`~200246510000FDAC` (Herstellerinfo).
+
+| CID2 | Inhalt der Antwort (INFO, Bytes big-endian) |
+|------|---------------------------------------------|
+| 0x42 Analogwerte | Flag, Pack, Zellenzahl N, N×u16 mV, Temperaturzahl M, M×u16 (0,1 K, −2731), dann je nach Hersteller: **Pylontech** s16 Strom 0,1 A, u16 Spannung mV, u16 Restkapazität mAh, u8 "user defined" (02/04), u16 Vollkapazität mAh, u16 Zyklen, bei 04 zusätzlich u24 Rest-/Vollkapazität mAh. **PACE** s16 Strom 0,01 A, u16 mV, u16 Rest 0,01 Ah, u8 03, u16 Voll 0,01 Ah, u16 Zyklen, u16 Nennkapazität 0,01 Ah. **Seplos** s16 Strom 0,01 A, u16 Spannung 0,01 V, u16 Rest 0,01 Ah, u8 0A, u16 Voll 0,01 Ah, u16 SoC 0,1 %, u16 Nennkapazität 0,01 Ah, u16 Zyklen, u16 SoH 0,1 %, u16 Port-Spannung 0,01 V |
+| 0x44 Alarm/Status | Flag, Pack, N, N×u8 Zellstatus, M, M×u8 Temperaturstatus, danach herstellerspezifische Statusbytes (batmon speichert sie roh als `status_raw`) |
+| 0x51 Herstellerinfo | 10 Byte Modell ASCII, 2 Byte Softwareversion, 20 Byte Hersteller ASCII |
+| 0x92 Lade-/Entlademanagement (Pylontech) | Pack, u16 CVL mV, u16 DVL mV, s16 CCL 0,1 A, s16 DCL 0,1 A, u8 Status (Bit 7 Laden erlaubt, Bit 6 Entladen erlaubt, Bit 5/4 Zwangsladung, Bit 3 Vollladung) |
+| 0x93 Seriennummer (Pylontech) | Pack, 16 Byte ASCII |
+| 0x4F Protokollversion | keine INFO, VER der Antwort ist die Version |
+
+Bei unbekanntem Hersteller (`generic_ascii`) wird das Layout am "user defined"-
+Byte erkannt (0A Seplos, 03 PACE, 02/04 Pylontech) und sonst daran, ob die
+Spannung in mV oder 0,01 V zur Summe der Zellspannungen passt.
+
+### 8.2 JK-BMS RS485 (binär)
+
+Anfrage `4E 57 00 13 00 00 00 00 06 03 00 00 00 00 00 00 68 00 00 01 29`
+(115200 8N1). Antwort: `4E 57` LEN(2) Terminal(4) `06` Quelle(1) Typ(1), dann
+Datensätze `ID Wert` mit fester Breite pro ID (0x79 Zellspannungen: Länge +
+Tripel Nr/u16 mV; 0x80–0x82 Temperaturen °C, Werte > 100 sind negativ;
+0x83 Spannung 0,01 V; 0x84 Strom 0,01 A, Bit 15 = Laden; 0x85 SoC; 0x87
+Zyklen; 0x8B Alarmbits; 0x8C Statusbits; 0xAA Kapazität Ah; 0xB4 Geräte-ID;
+0xB7 Firmware; 0xBA Hersteller), Record(4), `68`, Prüfsumme (4 Byte, 16-Bit-
+Summe aller vorherigen Bytes). LEN zählt ab dem LEN-Feld bis zum Ende.
+Alte Firmware kodiert den Strom als 10000 − Rohwert
+(`CONFIG_BATMON_JK_CURRENT_LEGACY`).
+
+### 8.3 Seplos V3 Modbus RTU
+
+19200 8N1, Slave-Adresse 0 für das erste Pack (DIP-Schalter), Funktion 04:
+
+| Register | Inhalt |
+|----------|--------|
+| 0x1000 … | Pack-Spannung 0,01 V, Strom 0,01 A (signed), Restkapazität 0,01 Ah, Gesamtkapazität 0,01 Ah, Entladesumme 0,1 Ah, SoC 0,1 %, SoH 0,1 %, Zyklen, mittlere Zellspannung mV, mittlere Zelltemperatur 0,1 K, max./min. Zellspannung, max./min. Zelltemperatur |
+| 0x1100 … | 16 Zellspannungen mV, 4 Zelltemperaturen 0,1 K, 0x1118 MOSFET-, 0x1119 Umgebungstemperatur |
+
+### 8.4 Erkennungsablauf
+
+Ohne feste Vorgabe werden nacheinander probiert: Pylontech 115200/Adr 2, PACE
+9600/Adr 1, Pylontech 9600, Seplos 9600/Adr 0, JK 115200, Seplos-V3-Modbus
+19200/Adr 0, dann die Varianten mit vertauschten Baudraten und Adressen 0/1.
+Jede gültige ASCII-Antwort (auch ein Fehlercode) zählt als gefundenes Gerät;
+die Antwort auf 0x51 legt den Flavor fest, ihre VER die Protokollversion. Danach
+läuft die Abfrage zyklisch (`CONFIG_BATMON_RS485_POLL_MS`): 0x42, 0x44 und bei
+Pylontech 0x92 (einmalig 0x93). Kommandos, die mit Rückgabecode ≠ 0 beantwortet
+werden, fallen aus dem Zyklus. Nach drei Fehlern in Folge gilt der Link als
+unterbrochen, nach zehn beginnt die Erkennung von vorn.
+
+Im Listen-only-Modus werden Anfragen (CID2 42/44/47/4F/51/92/93, INFO ≤ 2 Byte)
+und Antworten (CID2 = Rückgabecode) unterschieden; die Antwort wird mit dem
+Layout der zuletzt gesehenen Anfrage dekodiert. Baudraten werden rotiert, bis
+gültige Rahmen erscheinen.

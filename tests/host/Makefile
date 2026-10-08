@@ -6,7 +6,9 @@ CC    ?= gcc
 CFLAGS ?= -std=c99 -Wall -Wextra -Werror -O1 -g
 CPPFLAGS := -I$(ROOT)/src/proto -I$(ROOT)/tests/common -I$(ROOT)/tests/host
 SRC := $(ROOT)/src/proto/bm_proto.c $(ROOT)/src/proto/bm_json.c \
-       $(ROOT)/tests/common/test_cases.c $(ROOT)/tests/host/main.c
+       $(ROOT)/src/proto/bm_ydt.c $(ROOT)/src/proto/bm_serial.c \
+       $(ROOT)/tests/common/test_cases.c $(ROOT)/tests/common/test_serial.c \
+       $(ROOT)/tests/host/main.c
 OUT := $(ROOT)/build-host/test_proto
 
 all: run

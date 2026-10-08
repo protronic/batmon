@@ -81,6 +81,71 @@ config BATMON_HA_DISCOVERY
 
 endif # BATMON_MQTT
 
+menuconfig BATMON_RS485
+	bool "RS485/UART BMS link (Pylontech/PACE/Seplos ASCII, JK-BMS, Seplos V3 Modbus)"
+	default y
+	depends on DT_HAS_PROTRONIC_BATMON_RS485_ENABLED
+	select SERIAL
+	select UART_INTERRUPT_DRIVEN
+	select UART_USE_RUNTIME_CONFIGURE
+	select RING_BUFFER
+	help
+	  Poll the BMS over its RS485 port (or listen to an inverter doing so) in
+	  addition to the CAN bus. Needs a batmon-rs485 node in the devicetree.
+
+if BATMON_RS485
+
+config BATMON_RS485_LISTEN_ONLY
+	bool "Listen only: decode the traffic between inverter and BMS, never transmit"
+	default n
+
+config BATMON_RS485_POLL_MS
+	int "Poll interval in ms"
+	default 2000
+	range 200 60000
+
+config BATMON_RS485_BAUD
+	int "Fixed baud rate (0 = try 9600, 19200 and 115200)"
+	default 0
+
+config BATMON_RS485_ADDR
+	int "Fixed pack address (-1 = try the usual ones)"
+	default -1
+	range -1 15
+	help
+	  Pylontech packs answer on address 2 (first module), PACE on 1,
+	  Seplos on 0.
+
+choice BATMON_RS485_FLAVOR
+	prompt "Protocol"
+	default BATMON_RS485_FLAVOR_AUTO
+
+config BATMON_RS485_FLAVOR_AUTO
+	bool "Auto-detect"
+
+config BATMON_RS485_FLAVOR_PYLON
+	bool "Pylontech ASCII (US2000/US3000/US5000, Force L)"
+
+config BATMON_RS485_FLAVOR_PACE
+	bool "PACE ASCII (FM-Solar/DelongTop, Gobel, SOK ...)"
+
+config BATMON_RS485_FLAVOR_SEPLOS
+	bool "Seplos V2 ASCII"
+
+config BATMON_RS485_FLAVOR_JK
+	bool "JK-BMS RS485"
+
+config BATMON_RS485_FLAVOR_SEPLOS_V3
+	bool "Seplos V3 Modbus RTU"
+
+endchoice
+
+config BATMON_JK_CURRENT_LEGACY
+	bool "JK-BMS: old firmware current encoding (10000 - raw)"
+	default n
+
+endif # BATMON_RS485
+
 config BATMON_UI
 	bool "Status screen on the board display (LVGL)"
 	default y

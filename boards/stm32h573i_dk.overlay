@@ -16,12 +16,38 @@
  * with the USB-C data lines. To use that instead, drop the fdcan2 block below,
  * set `zephyr,canbus = &fdcan1;`, add bitrate/sample-point to &fdcan1 and
  * disable &usb.
+ *
+ * RS485 (optional): USART3 on the Arduino header plus a 3.3 V RS485 transceiver
+ * (MAX3485, SP3485, TI SN65HVD72 ...):
+ *
+ *   PB10 USART3_TX  -> Arduino D1  (transceiver DI)
+ *   PB11 USART3_RX  -> Arduino D0  (transceiver RO)
+ *   PG15 GPIO       -> Arduino D2  (transceiver DE and /RE tied together)
+ *
+ * Drop the de-gpios line for modules with automatic direction control. PB10/PB11
+ * are shared with I2C2, which batmon does not use.
  */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
 
 / {
 	chosen {
 		zephyr,canbus = &fdcan2;
 	};
+
+	batmon_rs485: batmon-rs485 {
+		compatible = "protronic,batmon-rs485";
+		uart = <&usart3>;
+		de-gpios = <&gpiog 15 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&usart3 {
+	current-speed = <9600>;
+};
+
+&i2c2 {
+	status = "disabled";
 };
 
 &fdcan2 {

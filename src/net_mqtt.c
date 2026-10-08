@@ -18,7 +18,7 @@ LOG_MODULE_REGISTER(batmon_net, LOG_LEVEL_INF);
 #define MQTT_THREAD_STACK 4096
 #define MQTT_THREAD_PRIO  7
 #define RX_BUF_SIZE       512
-#define TX_BUF_SIZE       2048
+#define TX_BUF_SIZE       4096
 #define RECONNECT_MIN_MS  2000
 #define RECONNECT_MAX_MS  60000
 

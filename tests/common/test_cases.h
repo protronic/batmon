@@ -8,7 +8,14 @@
 	X(test_sma_dialect)                                                                        \
 	X(test_pylon_hv)                                                                           \
 	X(test_inverter_and_unknown)                                                               \
-	X(test_id_table_overflow)
+	X(test_id_table_overflow)                                                                  \
+	X(test_ydt_frames)                                                                         \
+	X(test_serial_pylontech)                                                                   \
+	X(test_serial_seplos)                                                                      \
+	X(test_serial_pace_state_machine)                                                          \
+	X(test_serial_jk)                                                                          \
+	X(test_serial_modbus)                                                                      \
+	X(test_serial_sniff)
 
 #define BATMON_TEST_DECL(name) void name(void);
 BATMON_TEST_LIST(BATMON_TEST_DECL)

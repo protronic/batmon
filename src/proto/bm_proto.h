@@ -177,6 +177,14 @@ const char *bm_prot_bit_name(unsigned int byte_idx, unsigned int bit);
 const char *bm_alarm_bit_name(unsigned int byte_idx, unsigned int bit);
 
 /* Serialise the current state as compact JSON. Returns bytes written or -1 if buf is too small. */
+struct bm_serial;
+
+/* Telemetry including the RS485 block when s is not NULL. */
+int bm_json_telemetry_ex(const struct bm_proto *p, const struct bm_serial *s, uint32_t now_ms,
+			 char *buf, size_t len);
+int bm_json_flat_ex(const struct bm_proto *p, const struct bm_serial *s, uint32_t now_ms, char *buf,
+		    size_t len);
+
 int bm_json_telemetry(const struct bm_proto *p, uint32_t now_ms, char *buf, size_t len);
 
 /* Flat key/value JSON (no nesting) for ThingsBoard-style telemetry endpoints. */

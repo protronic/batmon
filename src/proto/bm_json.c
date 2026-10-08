@@ -1,4 +1,5 @@
 #include "bm_proto.h"
+#include "bm_serial.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -100,7 +101,198 @@ static void ap_bits(struct ap *a, const char *key, const uint8_t bytes[2],
 	ap_close(a, ']');
 }
 
-int bm_json_telemetry(const struct bm_proto *p, uint32_t now_ms, char *buf, size_t len)
+static void cells_minmax(const struct bm_serial_state *st, unsigned int *imin, unsigned int *imax)
+{
+	*imin = 0;
+	*imax = 0;
+	for (unsigned int i = 1; i < st->n_cells; i++) {
+		if (st->cell_mv[i] < st->cell_mv[*imin]) {
+			*imin = i;
+		}
+		if (st->cell_mv[i] > st->cell_mv[*imax]) {
+			*imax = i;
+		}
+	}
+}
+
+static int16_t temps_max(const struct bm_serial_state *st)
+{
+	int16_t m = st->temp_dc[0];
+
+	for (unsigned int i = 1; i < st->n_temps; i++) {
+		if (st->temp_dc[i] > m) {
+			m = st->temp_dc[i];
+		}
+	}
+	return m;
+}
+
+static void ap_serial(struct ap *a, const struct bm_serial *s)
+{
+	const struct bm_serial_state *st = &s->st;
+	bool ascii = s->flavor == BM_SER_PYLON_ASCII || s->flavor == BM_SER_PACE_ASCII ||
+		     s->flavor == BM_SER_SEPLOS_ASCII || s->flavor == BM_SER_GENERIC_ASCII;
+
+	ap_open(a, "serial", '{');
+	ap_str(a, "flavor", bm_serial_flavor_name(s->flavor));
+	ap_str(a, "desc", s->flavor_str);
+	ap_str(a, "phase", bm_serial_phase_name(s->phase));
+	ap_bool(a, "link", s->link_up);
+	ap_int(a, "baud", (int32_t)s->baud);
+	if (ascii) {
+		ap_raw(a, "\"ver\":\"%02x\",", s->ver);
+		ap_int(a, "addr", s->adr);
+	}
+	if (st->valid & BM_SV_IDENT) {
+		ap_str(a, "model", st->model);
+		ap_str(a, "mfr", st->manufacturer);
+		ap_str(a, "sw", st->sw_version);
+	}
+	if (st->valid & BM_SV_SERIAL) {
+		ap_str(a, "sn", st->serial);
+	}
+	if (st->valid & BM_SV_MEAS) {
+		ap_fixed(a, "u", st->pack_mv / 10, 100, 2);
+		ap_fixed(a, "i", st->pack_ma / 10, 100, 2);
+	}
+	if (st->valid & BM_SV_PORT_U) {
+		ap_fixed(a, "port_u", st->port_mv / 10, 100, 2);
+	}
+	if (st->valid & BM_SV_SOC) {
+		ap_fixed(a, "soc", st->soc_dpct, 10, 1);
+		ap_bool(a, "soc_derived", st->soc_derived);
+	}
+	if (st->valid & BM_SV_SOH) {
+		ap_fixed(a, "soh", st->soh_dpct, 10, 1);
+	}
+	if (st->valid & BM_SV_CAP) {
+		ap_fixed(a, "remain_ah", (int32_t)(st->remain_mah / 10), 100, 2);
+		ap_fixed(a, "full_ah", (int32_t)(st->full_mah / 10), 100, 2);
+		if (st->rated_mah) {
+			ap_fixed(a, "rated_ah", (int32_t)(st->rated_mah / 10), 100, 2);
+		}
+	}
+	if (st->valid & BM_SV_CYCLES) {
+		ap_int(a, "cycles", st->cycles);
+	}
+	if ((st->valid & BM_SV_CELLS) && st->n_cells) {
+		unsigned int imin, imax;
+
+		cells_minmax(st, &imin, &imax);
+		ap_open(a, "cells", '[');
+		for (unsigned int i = 0; i < st->n_cells; i++) {
+			ap_raw(a, "%u.%03u,", st->cell_mv[i] / 1000, st->cell_mv[i] % 1000);
+		}
+		ap_close(a, ']');
+		ap_int(a, "cell_min_mv", st->cell_mv[imin]);
+		ap_int(a, "cell_max_mv", st->cell_mv[imax]);
+		ap_int(a, "cell_min_idx", (int32_t)imin + 1);
+		ap_int(a, "cell_max_idx", (int32_t)imax + 1);
+		ap_int(a, "cell_diff_mv", st->cell_mv[imax] - st->cell_mv[imin]);
+	}
+	if ((st->valid & BM_SV_TEMPS) && st->n_temps) {
+		ap_open(a, "temps", '[');
+		for (unsigned int i = 0; i < st->n_temps; i++) {
+			int16_t t = st->temp_dc[i];
+
+			ap_raw(a, "%s%d.%d,", t < 0 ? "-" : "", (t < 0 ? -t : t) / 10,
+			       (t < 0 ? -t : t) % 10);
+		}
+		ap_close(a, ']');
+		ap_fixed(a, "t_max", temps_max(st), 10, 1);
+	}
+	if (st->valid & BM_SV_LIMITS) {
+		ap_fixed(a, "cvl", st->cvl_mv / 10, 100, 2);
+		ap_fixed(a, "dvl", st->dvl_mv / 10, 100, 2);
+		ap_fixed(a, "ccl", st->ccl_ma / 100, 10, 1);
+		ap_fixed(a, "dcl", st->dcl_ma / 100, 10, 1);
+		ap_bool(a, "charge_en", (st->req_flags & 0x80) != 0);
+		ap_bool(a, "discharge_en", (st->req_flags & 0x40) != 0);
+		ap_bool(a, "force_charge", (st->req_flags & 0x30) != 0);
+		ap_bool(a, "full_req", (st->req_flags & 0x08) != 0);
+	}
+	if (st->valid & BM_SV_STATUS) {
+		unsigned int warn = 0;
+
+		for (unsigned int i = 0; i < st->n_cells; i++) {
+			warn += st->cell_status[i] != 0;
+		}
+		for (unsigned int i = 0; i < st->n_temps; i++) {
+			warn += st->temp_status[i] != 0;
+		}
+		ap_int(a, "sensor_warn", (int32_t)warn);
+		ap_raw(a, "\"status_raw\":\"");
+		for (unsigned int i = 0; i < st->n_status_raw; i++) {
+			ap_raw(a, "%02x", st->status_raw[i]);
+		}
+		ap_raw(a, "\",");
+	}
+	if (st->valid & BM_SV_JKFLAGS) {
+		ap_raw(a, "\"jk_alarm\":\"%04x\",\"jk_status\":\"%04x\",", st->jk_alarm, st->jk_status);
+	}
+	ap_int(a, "ok", (int32_t)s->ok_count);
+	ap_int(a, "err", (int32_t)s->err_count);
+	ap_int(a, "timeouts", (int32_t)s->timeout_count);
+	ap_int(a, "crc_err", (int32_t)s->crc_errors);
+	if (s->sniff_frames) {
+		ap_int(a, "sniffed", (int32_t)s->sniff_frames);
+	}
+	if (s->last_err[0]) {
+		ap_str(a, "last_err", s->last_err);
+	}
+	ap_close(a, '}');
+}
+
+static void ap_serial_flat(struct ap *a, const struct bm_serial *s)
+{
+	const struct bm_serial_state *st = &s->st;
+
+	ap_str(a, "rs_flavor", bm_serial_flavor_name(s->flavor));
+	ap_str(a, "rs_desc", s->flavor_str);
+	ap_bool(a, "rs_link", s->link_up);
+	if (st->valid & BM_SV_IDENT) {
+		ap_str(a, "rs_model", st->model);
+		ap_str(a, "rs_mfr", st->manufacturer);
+	}
+	if (st->valid & BM_SV_MEAS) {
+		ap_fixed(a, "rs_u", st->pack_mv / 10, 100, 2);
+		ap_fixed(a, "rs_i", st->pack_ma / 10, 100, 2);
+	}
+	if (st->valid & BM_SV_SOC) {
+		ap_fixed(a, "rs_soc", st->soc_dpct, 10, 1);
+	}
+	if (st->valid & BM_SV_SOH) {
+		ap_fixed(a, "rs_soh", st->soh_dpct, 10, 1);
+	}
+	if (st->valid & BM_SV_CAP) {
+		ap_fixed(a, "rs_remain_ah", (int32_t)(st->remain_mah / 10), 100, 2);
+		ap_fixed(a, "rs_full_ah", (int32_t)(st->full_mah / 10), 100, 2);
+	}
+	if (st->valid & BM_SV_CYCLES) {
+		ap_int(a, "rs_cycles", st->cycles);
+	}
+	if ((st->valid & BM_SV_CELLS) && st->n_cells) {
+		unsigned int imin, imax;
+
+		cells_minmax(st, &imin, &imax);
+		ap_int(a, "rs_cell_min_mv", st->cell_mv[imin]);
+		ap_int(a, "rs_cell_max_mv", st->cell_mv[imax]);
+		ap_int(a, "rs_cell_diff_mv", st->cell_mv[imax] - st->cell_mv[imin]);
+	}
+	if ((st->valid & BM_SV_TEMPS) && st->n_temps) {
+		ap_fixed(a, "rs_t_max", temps_max(st), 10, 1);
+	}
+	if (st->valid & BM_SV_LIMITS) {
+		ap_fixed(a, "rs_cvl", st->cvl_mv / 10, 100, 2);
+		ap_fixed(a, "rs_ccl", st->ccl_ma / 100, 10, 1);
+		ap_fixed(a, "rs_dcl", st->dcl_ma / 100, 10, 1);
+	}
+	ap_int(a, "rs_ok", (int32_t)s->ok_count);
+	ap_int(a, "rs_err", (int32_t)s->err_count);
+}
+
+int bm_json_telemetry_ex(const struct bm_proto *p, const struct bm_serial *s, uint32_t now_ms,
+			 char *buf, size_t len)
 {
 	if (len < 2) {
 		return -1;
@@ -223,6 +415,9 @@ int bm_json_telemetry(const struct bm_proto *p, uint32_t now_ms, char *buf, size
 		}
 		ap_close(&a, '}');
 	}
+	if (s) {
+		ap_serial(&a, s);
+	}
 	ap_close(&a, '}');
 	if (a.ovf) {
 		return -1;
@@ -234,7 +429,8 @@ int bm_json_telemetry(const struct bm_proto *p, uint32_t now_ms, char *buf, size
 	return (int)a.pos;
 }
 
-int bm_json_flat(const struct bm_proto *p, uint32_t now_ms, char *buf, size_t len)
+int bm_json_flat_ex(const struct bm_proto *p, const struct bm_serial *s, uint32_t now_ms, char *buf,
+		    size_t len)
 {
 	if (len < 2) {
 		return -1;
@@ -282,6 +478,9 @@ int bm_json_flat(const struct bm_proto *p, uint32_t now_ms, char *buf, size_t le
 		ap_int(&a, "cell_min_mv", st->cell_min_mv);
 		ap_int(&a, "cell_max_mv", st->cell_max_mv);
 	}
+	if (s) {
+		ap_serial_flat(&a, s);
+	}
 	ap_close(&a, '}');
 	if (a.ovf) {
 		return -1;
@@ -290,4 +489,14 @@ int bm_json_flat(const struct bm_proto *p, uint32_t now_ms, char *buf, size_t le
 		a.buf[--a.pos] = '\0';
 	}
 	return (int)a.pos;
+}
+
+int bm_json_telemetry(const struct bm_proto *p, uint32_t now_ms, char *buf, size_t len)
+{
+	return bm_json_telemetry_ex(p, NULL, now_ms, buf, len);
+}
+
+int bm_json_flat(const struct bm_proto *p, uint32_t now_ms, char *buf, size_t len)
+{
+	return bm_json_flat_ex(p, NULL, now_ms, buf, len);
 }

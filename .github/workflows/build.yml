@@ -11,7 +11,7 @@ jobs:
     name: protocol core (host gcc)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: build and run
         run: make -C tests/host
 
@@ -20,8 +20,12 @@ jobs:
     runs-on: ubuntu-24.04
     container:
       image: ghcr.io/zephyrproject-rtos/ci:v0.29.1
+    env:
+      # the SDK in the CI image lives in /opt/toolchains; the CMake package
+      # registry entry of the image user is not visible to the Actions user
+      CMAKE_PREFIX_PATH: /opt/toolchains
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: batmon
 

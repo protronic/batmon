@@ -40,6 +40,13 @@
 		uart = <&usart3>;
 		de-gpios = <&gpiog 15 GPIO_ACTIVE_HIGH>;
 	};
+
+	/* touch panel -> LVGL pointer; add swap-xy / invert-x / invert-y here if the
+	 * touch position is mirrored against the display */
+	lvgl_pointer {
+		compatible = "zephyr,lvgl-pointer-input";
+		input = <&ft3267>;
+	};
 };
 
 &usart3 {

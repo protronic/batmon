@@ -221,18 +221,20 @@ Dazu die Zephyr-Shells `can`, `net` (z. B. `net iface`, `net ping`) und
 
 ## Display
 
-Seite 1 (CAN): Kopfzeile mit Device-ID und CAN-Link, großer SoC mit Balken,
-Spannung/Strom/Temperatur, Lade- und Entladegrenzen, Freigabeflags (bei aktiver
-Protection rot "SCHUTZ AKTIV"), erkannter Protokoll-Flavor mit Hersteller und
-Konfidenz, unten IP-Adresse, MQTT-Status und Rahmenzähler.
+Die Anzeige ist eine LVGL-9-Oberfläche mit drei Tabs, umschaltbar per Touch
+(Tippen auf die Tableiste oder Wischen), per User-Taster oder automatisch:
+ohne Bedienung zeigt batmon den Tab, auf dem gerade Daten ankommen (CAN vor
+RS485), eine manuelle Wahl bleibt 30 s erhalten.
 
-Seite 2 (RS485): erkanntes Protokoll mit Modell und Hersteller, Spannung/Strom,
-SoC/SoH, Zellspannungsbereich mit Differenz und Zellnummern, höchste Temperatur,
-Kapazität und Zyklen, Limits bzw. Statusbytes, Zähler.
+| Tab | Inhalt |
+|-----|--------|
+| CAN | SoC als Rundinstrument, Spannung, Strom, Temperatur, SoH, Lade-/Entladegrenzen, Freigaben (bei aktiver Protection rot "SCHUTZ AKTIV"), erkannter Protokoll-Flavor mit Hersteller und Konfidenz, IP-Adresse, MQTT-Status, Rahmenzähler |
+| RS485 | SoC-Instrument (mit `*`, wenn aus Rest-/Vollkapazität berechnet), Spannung, Strom, SoH bzw. Zyklen, erkanntes Protokoll mit Modell und Hersteller, Zellspannungsbereich und Differenz, Kapazität, Limits bzw. Statusbytes, Baudrate und Zähler |
+| Zellen | Balkendiagramm aller Zellspannungen (Skala passt sich dem Bereich an), Minimum und Maximum mit Zellnummer, Differenz, alle Temperaturen; ohne RS485 die Min/Max-Werte aus der Victron-/HV-Erweiterung am CAN |
 
-Der User-Taster wechselt die Seite; ohne Tastendruck zeigt batmon die Seite,
-auf der gerade Daten ankommen. Die blaue LED leuchtet dauerhaft, solange
-CAN-Rahmen eintreffen, und blinkt sonst.
+Die blaue LED leuchtet dauerhaft, solange CAN-Rahmen eintreffen, und blinkt
+sonst. Spiegelt der Touch die Position, im Overlay beim Knoten `lvgl_pointer`
+`swap-xy`, `invert-x` oder `invert-y` setzen.
 
 ## Protokolle und Erkennung
 
@@ -280,7 +282,7 @@ src/main.c               Init, LED, Protokoll-Tick
 src/can_rx.c             CAN-Empfang (Queue + Thread), Listen-only, Bench-Heartbeat
 src/rs485.c              RS485: UART-Empfang, DE-Umschaltung, Abfrage- und Mithör-Schleife
 src/net_mqtt.c           DHCP, MQTT-Client, HA-Discovery, ThingsBoard
-src/ui.c                 LVGL-Statusbildschirm
+src/ui.c                 LVGL-Oberfläche: Tabs CAN/RS485/Zellen, Touch, Taster
 src/shell_cmds.c         Shell-Kommandos `batmon ...`
 src/proto/bm_proto.[ch]  Dekoder, ID-Statistik, Flavor-Erkennung (plain C)
 src/proto/bm_json.c      Telemetrie-JSON (verschachtelt / flach)

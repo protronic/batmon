@@ -1,0 +1,10 @@
+build/
+build-*/
+twister-out*/
+*.pyc
+__pycache__/
+.vscode/
+.idea/
+*.swp
+local*.conf
+build-host/

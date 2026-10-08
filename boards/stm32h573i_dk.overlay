@@ -1,0 +1,47 @@
+/*
+ * batmon on the STM32H573I-DK
+ *
+ * The Discovery kit has no CAN transceiver on board. FDCAN2 is routed to the
+ * Arduino header, so a small 3.3 V transceiver breakout (SN65HVD230, TJA1051T/3,
+ * MCP2562FD ...) connects directly:
+ *
+ *   PB5  FDCAN2_RX  -> Arduino D3   (transceiver RXD)
+ *   PB6  FDCAN2_TX  -> Arduino D15  (transceiver TXD, the pin labelled SCL)
+ *   3V3 / GND       -> transceiver supply (3.3 V logic!)
+ *
+ * PB5/PB6 are otherwise TIM3_CH2 (D3 PWM) and I2C1_SCL (Arduino I2C), both unused
+ * by batmon and therefore disabled here.
+ *
+ * Alternative: the board devicetree wires FDCAN1 to PA11/PA12, which are shared
+ * with the USB-C data lines. To use that instead, drop the fdcan2 block below,
+ * set `zephyr,canbus = &fdcan1;`, add bitrate/sample-point to &fdcan1 and
+ * disable &usb.
+ */
+
+/ {
+	chosen {
+		zephyr,canbus = &fdcan2;
+	};
+};
+
+&fdcan2 {
+	clocks = <&rcc STM32_CLOCK(APB1_2, 9)>,
+		 <&rcc STM32_SRC_PLL1_Q FDCAN_SEL(1)>;
+	pinctrl-0 = <&fdcan2_rx_pb5 &fdcan2_tx_pb6>;
+	pinctrl-names = "default";
+	bitrate = <500000>;
+	sample-point = <875>;
+	status = "okay";
+};
+
+&pwm3 {
+	status = "disabled";
+};
+
+&timers3 {
+	status = "disabled";
+};
+
+&i2c1 {
+	status = "disabled";
+};

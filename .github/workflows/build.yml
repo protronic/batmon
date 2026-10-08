@@ -1,0 +1,48 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  host-tests:
+    name: protocol core (host gcc)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: build and run
+        run: make -C tests/host
+
+  zephyr:
+    name: zephyr (stm32h573i_dk + twister)
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/zephyrproject-rtos/ci:v0.29.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: batmon
+
+      - name: west workspace
+        run: |
+          west init -l batmon
+          west update --narrow -o=--depth=1
+          west zephyr-export
+
+      - name: build firmware
+        run: west build -p always -b stm32h573i_dk batmon -d build
+
+      - name: protocol tests (twister, native_sim)
+        run: west twister -T batmon/tests -p native_sim --inline-logs -v
+
+      - name: firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: batmon-stm32h573i_dk
+          path: |
+            build/zephyr/zephyr.bin
+            build/zephyr/zephyr.hex
+            build/zephyr/zephyr.elf
+            build/zephyr/.config

@@ -1,0 +1,91 @@
+mainmenu "batmon - battery CAN monitor"
+
+menu "batmon"
+
+config BATMON_DEVICE_ID
+	string "Device id (MQTT client id, topic element, display)"
+	default "batmon"
+
+config BATMON_CAN_BITRATE
+	int "CAN bitrate in bit/s"
+	default 500000
+
+config BATMON_CAN_LISTEN_ONLY
+	bool "Listen-only: never acknowledge or transmit on the bus"
+	default y
+	help
+	  Recommended when batmon is attached to a bus that already carries a
+	  battery and an inverter. Disable only on the bench, where batmon is the
+	  only counterpart of the battery.
+
+config BATMON_BENCH_HEARTBEAT
+	bool "Send the inverter keep-alive 0x305 once per second (bench mode)"
+	depends on !BATMON_CAN_LISTEN_ONLY
+	default n
+	help
+	  Many BMS firmwares stop reporting or open the contactor when no inverter
+	  heartbeat is seen. With this option batmon plays the inverter role.
+
+config BATMON_RAW_LOG
+	bool "Log every received CAN frame"
+	default n
+
+config BATMON_MQTT
+	bool "Publish telemetry over MQTT"
+	default y
+
+if BATMON_MQTT
+
+config BATMON_MQTT_BROKER_HOST
+	string "Broker host name or IPv4 address"
+	default "192.168.1.10"
+
+config BATMON_MQTT_BROKER_PORT
+	int "Broker TCP port"
+	default 1883
+
+config BATMON_MQTT_USERNAME
+	string "User name (ThingsBoard: device access token)"
+	default ""
+
+config BATMON_MQTT_PASSWORD
+	string "Password"
+	default ""
+
+config BATMON_MQTT_INTERVAL_SEC
+	int "Publish interval in seconds"
+	default 5
+	range 1 3600
+
+choice BATMON_MQTT_MODE
+	prompt "Topic and payload scheme"
+	default BATMON_MQTT_MODE_GENERIC
+
+config BATMON_MQTT_MODE_GENERIC
+	bool "Generic: <prefix>/<id>/state JSON, <prefix>/<id>/status LWT"
+
+config BATMON_MQTT_MODE_THINGSBOARD
+	bool "ThingsBoard device API: v1/devices/me/telemetry (flat JSON)"
+
+endchoice
+
+config BATMON_MQTT_TOPIC_PREFIX
+	string "Topic prefix (generic mode)"
+	default "batmon"
+	depends on BATMON_MQTT_MODE_GENERIC
+
+config BATMON_HA_DISCOVERY
+	bool "Publish Home Assistant MQTT discovery messages"
+	default y
+	depends on BATMON_MQTT_MODE_GENERIC
+
+endif # BATMON_MQTT
+
+config BATMON_UI
+	bool "Status screen on the board display (LVGL)"
+	default y
+	depends on LVGL
+
+endmenu
+
+source "Kconfig.zephyr"
